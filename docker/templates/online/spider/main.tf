@@ -27,16 +27,51 @@ data "coder_provisioner" "me" {}
 data "coder_workspace" "me" {}
 data "coder_workspace_owner" "me" {}
 
-data "coder_parameter" "project_name" {
-  name         = "project_name"
-  display_name = "爬虫项目名称"
+# 项目来源
+data "coder_parameter" "source" {
+  name         = "source"
+  display_name = "项目来源"
   type         = "string"
-  default      = "my_spider"
+  default      = "empty"
+  mutable      = false
+  option {
+    name  = "新建空项目"
+    value = "empty"
+  }
+  option {
+    name  = "新建 Scrapy 项目"
+    value = "scrapy"
+  }
+  option {
+    name  = "克隆 Git 仓库"
+    value = "git"
+  }
+  option {
+    name  = "上传文件"
+    value = "upload"
+  }
+}
+
+# 项目名称
+data "coder_parameter" "name" {
+  name         = "name"
+  display_name = "项目名称"
+  type         = "string"
+  default      = "my_project"
   mutable      = false
   validation {
-    regex = "^[a-zA-Z][a-zA-Z0-9_]*$"
-    error = "项目名必须以字母开头，只能包含字母、数字、下划线"
+    regex = "^[a-zA-Z][a-zA-Z0-9_-]*$"
+    error = "项目名必须以字母开头，只能包含字母、数字、下划线、连字符"
   }
+}
+
+# Git 仓库地址
+data "coder_parameter" "repo" {
+  name         = "repo"
+  display_name = "Git 仓库地址"
+  type         = "string"
+  default      = ""
+  mutable      = false
 }
 
 resource "coder_agent" "main" {
@@ -45,41 +80,57 @@ resource "coder_agent" "main" {
   startup_script = <<-EOT
     set -e
 
-    # Prepare user home with default files on first start.
     if [ ! -f ~/.init_done ]; then
       cp -rT /etc/skel ~
       touch ~/.init_done
     fi
 
-    PROJECT_NAME="${data.coder_parameter.project_name.value}"
-    PROJECT_DIR="/home/coder/$PROJECT_NAME"
+    SOURCE="${data.coder_parameter.source.value}"
+    NAME="${data.coder_parameter.name.value}"
+    REPO="${data.coder_parameter.repo.value}"
+    PROJECT_DIR="/home/coder/$NAME"
 
     echo "========================================"
-    echo "  Scrapy 爬虫开发环境初始化"
+    echo "  爬虫开发环境初始化"
+    echo "  项目来源: $SOURCE"
+    echo "  项目名称: $NAME"
     echo "  开始时间: $(date)"
     echo "========================================"
 
     # 安装系统依赖
     echo "[1/3] 安装系统依赖..."
     sudo apt-get update -qq 2>/dev/null || true
-    sudo apt-get install -y -qq python3-pip python3-venv git vim curl wget 2>/dev/null || true
+    sudo apt-get install -y -qq python3-pip python3-venv git vim curl wget unzip 2>/dev/null || true
 
     # 创建 Python 虚拟环境
     echo "[2/3] 设置 Python 虚拟环境..."
     mkdir -p /home/coder/.venvs
-    if [ ! -d /home/coder/.venvs/scrapy-env ]; then
-        python3 -m venv /home/coder/.venvs/scrapy-env
+    if [ ! -d /home/coder/.venvs/spider-env ]; then
+        python3 -m venv /home/coder/.venvs/spider-env
     fi
-    source /home/coder/.venvs/scrapy-env/bin/activate
+    source /home/coder/.venvs/spider-env/bin/activate
     pip install -q --upgrade pip
-    pip install -q --no-cache-dir scrapy requests beautifulsoup4 lxml pandas openpyxl pymongo redis fake-useragent jupyter jupyterlab ipython black isort 2>&1 | tail -3
-    echo "  Python依赖安装完成"
+    pip install -q --no-cache-dir scrapy requests beautifulsoup4 lxml pandas jupyter jupyterlab ipython 2>&1 | tail -3
+    echo "  Python 依赖安装完成"
 
-    # 创建 Scrapy 项目
-    echo "[3/3] 创建 Scrapy 项目..."
+    # 初始化项目
+    echo "[3/3] 初始化项目..."
     cd /home/coder
     if [ ! -d "$PROJECT_DIR" ]; then
-        scrapy startproject "$PROJECT_NAME"
+        case "$SOURCE" in
+            empty)
+                mkdir -p "$PROJECT_DIR"
+                ;;
+            scrapy)
+                scrapy startproject "$NAME"
+                ;;
+            git)
+                git clone "$REPO" "$PROJECT_DIR"
+                ;;
+            upload)
+                mkdir -p "$PROJECT_DIR"
+                ;;
+        esac
     fi
 
     # 设置权限
@@ -87,13 +138,14 @@ resource "coder_agent" "main" {
     sudo chown -R coder:coder "$PROJECT_DIR" 2>/dev/null || true
 
     # 配置环境变量
-    if ! grep -q "scrapy-env" /home/coder/.bashrc 2>/dev/null; then
-        echo 'source /home/coder/.venvs/scrapy-env/bin/activate' >> /home/coder/.bashrc
+    if ! grep -q "spider-env" /home/coder/.bashrc 2>/dev/null; then
+        echo 'source /home/coder/.venvs/spider-env/bin/activate' >> /home/coder/.bashrc
     fi
 
     echo ""
     echo "========================================"
-    echo "  爬虫开发环境已就绪!"
+    echo "  开发环境已就绪!"
+    echo "  项目目录: $PROJECT_DIR"
     echo "  完成时间: $(date)"
     echo "========================================"
   EOT
@@ -130,25 +182,36 @@ resource "coder_agent" "main" {
   }
 }
 
-# 使用官方 code-server 模块
+# VS Code 编辑器
 module "code-server" {
-  count  = data.coder_workspace.me.start_count
-  source = "registry.coder.com/coder/code-server/coder"
+  count   = data.coder_workspace.me.start_count
+  source  = "registry.coder.com/coder/code-server/coder"
   version = "~> 1.0"
 
   agent_id = coder_agent.main.id
-  folder   = "/home/coder/${data.coder_parameter.project_name.value}"
+  folder   = "/home/coder/${data.coder_parameter.name.value}"
   order    = 1
 }
 
-# 使用官方 JupyterLab 模块
+# JupyterLab
 module "jupyterlab" {
-  count  = data.coder_workspace.me.start_count
-  source = "registry.coder.com/coder/jupyterlab/coder"
+  count   = data.coder_workspace.me.start_count
+  source  = "registry.coder.com/coder/jupyterlab/coder"
   version = "~> 1.0"
 
   agent_id  = coder_agent.main.id
   order     = 2
+  subdomain = false
+}
+
+# 文件管理器
+module "filebrowser" {
+  count   = data.coder_workspace.me.start_count
+  source  = "registry.coder.com/coder/filebrowser/coder"
+  version = "~> 1.0"
+
+  agent_id  = coder_agent.main.id
+  order     = 3
   subdomain = false
 }
 
@@ -210,5 +273,5 @@ resource "docker_container" "workspace" {
 }
 
 output "project_directory" {
-  value = "/home/coder/${data.coder_parameter.project_name.value}"
+  value = "/home/coder/${data.coder_parameter.name.value}"
 }
