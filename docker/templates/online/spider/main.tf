@@ -189,7 +189,7 @@ module "code-server" {
   version = "~> 1.0"
 
   agent_id = coder_agent.main.id
-  folder   = "/home/coder/${data.coder_parameter.name.value}"
+  folder   = "/home/coder"
   order    = 1
 }
 
