@@ -10,7 +10,11 @@ terraform {
 }
 
 locals {
-  username = data.coder_workspace_owner.me.name
+  project_name = data.coder_parameter.name.value
+  project_dir  = "/home/coder/${local.project_name}"
+  source       = data.coder_parameter.source.value
+  repo         = data.coder_parameter.repo.value
+  node_version = data.coder_parameter.node_version.value
 }
 
 variable "docker_socket" {
@@ -19,9 +23,17 @@ variable "docker_socket" {
   type        = string
 }
 
+variable "docker_image" {
+  default     = "codercom/enterprise-base:ubuntu"
+  description = "Base image for the workspace container"
+  type        = string
+}
+
 provider "docker" {
   host = var.docker_socket != "" ? var.docker_socket : null
 }
+
+provider "coder" {}
 
 data "coder_provisioner" "me" {}
 data "coder_workspace" "me" {}
@@ -72,83 +84,50 @@ data "coder_parameter" "repo" {
   type         = "string"
   default      = ""
   mutable      = false
+  validation {
+    regex = "^$|^(https?|ssh|git)://|^git@"
+    error = "请输入有效的 Git 仓库地址（https://、ssh://、git:// 或 git@ 开头），或保持为空"
+  }
+}
+
+# Node 版本
+data "coder_parameter" "node_version" {
+  name         = "node_version"
+  display_name = "Node 版本 (nvm)"
+  type         = "string"
+  default      = "lts/*"
+  mutable      = true
+  description  = "示例: lts/*、20、18"
+}
+
+# 启用的工具
+data "coder_parameter" "enable_code_server" {
+  name         = "enable_code_server"
+  display_name = "启用 VS Code (code-server)"
+  type         = "bool"
+  default      = true
+  mutable      = true
+}
+
+data "coder_parameter" "enable_jupyterlab" {
+  name         = "enable_jupyterlab"
+  display_name = "启用 JupyterLab"
+  type         = "bool"
+  default      = true
+  mutable      = true
+}
+
+data "coder_parameter" "enable_filebrowser" {
+  name         = "enable_filebrowser"
+  display_name = "启用文件管理器"
+  type         = "bool"
+  default      = true
+  mutable      = true
 }
 
 resource "coder_agent" "main" {
-  arch           = data.coder_provisioner.me.arch
-  os             = "linux"
-  startup_script = <<-EOT
-    set -e
-
-    if [ ! -f ~/.init_done ]; then
-      cp -rT /etc/skel ~
-      touch ~/.init_done
-    fi
-
-    SOURCE="${data.coder_parameter.source.value}"
-    NAME="${data.coder_parameter.name.value}"
-    REPO="${data.coder_parameter.repo.value}"
-    PROJECT_DIR="/home/coder/$NAME"
-
-    echo "========================================"
-    echo "  爬虫开发环境初始化"
-    echo "  项目来源: $SOURCE"
-    echo "  项目名称: $NAME"
-    echo "  开始时间: $(date)"
-    echo "========================================"
-
-    # 安装系统依赖
-    echo "[1/3] 安装系统依赖..."
-    sudo apt-get update -qq 2>/dev/null || true
-    sudo apt-get install -y -qq python3-pip python3-venv git vim curl wget unzip 2>/dev/null || true
-
-    # 创建 Python 虚拟环境
-    echo "[2/3] 设置 Python 虚拟环境..."
-    mkdir -p /home/coder/.venvs
-    if [ ! -d /home/coder/.venvs/spider-env ]; then
-        python3 -m venv /home/coder/.venvs/spider-env
-    fi
-    source /home/coder/.venvs/spider-env/bin/activate
-    pip install -q --upgrade pip
-    pip install -q --no-cache-dir scrapy requests beautifulsoup4 lxml pandas jupyter jupyterlab ipython 2>&1 | tail -3
-    echo "  Python 依赖安装完成"
-
-    # 初始化项目
-    echo "[3/3] 初始化项目..."
-    cd /home/coder
-    if [ ! -d "$PROJECT_DIR" ]; then
-        case "$SOURCE" in
-            empty)
-                mkdir -p "$PROJECT_DIR"
-                ;;
-            scrapy)
-                scrapy startproject "$NAME"
-                ;;
-            git)
-                git clone "$REPO" "$PROJECT_DIR"
-                ;;
-            upload)
-                mkdir -p "$PROJECT_DIR"
-                ;;
-        esac
-    fi
-
-    # 设置权限
-    sudo chown -R coder:coder /home/coder/.venvs 2>/dev/null || true
-    sudo chown -R coder:coder "$PROJECT_DIR" 2>/dev/null || true
-
-    # 配置环境变量
-    if ! grep -q "spider-env" /home/coder/.bashrc 2>/dev/null; then
-        echo 'source /home/coder/.venvs/spider-env/bin/activate' >> /home/coder/.bashrc
-    fi
-
-    echo ""
-    echo "========================================"
-    echo "  开发环境已就绪!"
-    echo "  项目目录: $PROJECT_DIR"
-    echo "  完成时间: $(date)"
-    echo "========================================"
-  EOT
+  arch = data.coder_provisioner.me.arch
+  os   = "linux"
 
   env = {
     GIT_AUTHOR_NAME     = coalesce(data.coder_workspace_owner.me.full_name, data.coder_workspace_owner.me.name)
@@ -182,9 +161,150 @@ resource "coder_agent" "main" {
   }
 }
 
+resource "coder_script" "workspace_init" {
+  agent_id            = coder_agent.main.id
+  display_name        = "Workspace Init"
+  icon                = "/icon/package.svg"
+  run_on_start        = true
+  start_blocks_login  = true
+  timeout             = 1800
+
+  script = <<-EOT
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    if [ ! -f "$HOME/.init_done" ]; then
+      cp -rT /etc/skel "$HOME"
+      touch "$HOME/.init_done"
+    fi
+
+    SOURCE="${local.source}"
+    NAME="${local.project_name}"
+    REPO="${local.repo}"
+    PROJECT_DIR="${local.project_dir}"
+    NODE_VERSION="${local.node_version}"
+
+    echo "========================================"
+    echo "  爬虫开发环境初始化"
+    echo "  项目来源: $SOURCE"
+    echo "  项目名称: $NAME"
+    echo "  Node 版本: $NODE_VERSION"
+    echo "  开始时间: $(date)"
+    echo "========================================"
+
+    if [ "$SOURCE" = "git" ] && [ -z "$REPO" ]; then
+      echo "错误: 选择了 Git 仓库来源但未提供仓库地址"
+      exit 1
+    fi
+
+    # 安装系统依赖
+    echo "[1/5] 安装系统依赖..."
+    export DEBIAN_FRONTEND=noninteractive
+    if [ ! -f "$HOME/.apt_done" ]; then
+      if sudo apt-get update -qq 2>/dev/null; then
+        sudo apt-get install -y -qq python3-pip python3-venv git vim curl wget unzip 2>/dev/null
+        touch "$HOME/.apt_done"
+      else
+        echo "警告: apt-get update 失败，已跳过系统依赖安装"
+      fi
+    fi
+
+    if ! command -v curl >/dev/null 2>&1; then
+      echo "警告: curl 未安装，跳过 nvm/Node/uv 安装"
+    else
+      # 安装 nvm
+      echo "[2/5] 安装 nvm..."
+      export NVM_DIR="$HOME/.nvm"
+      if [ ! -s "$NVM_DIR/nvm.sh" ]; then
+        export PROFILE="$HOME/.bashrc"
+        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+      fi
+      if ! grep -q 'NVM_DIR' "$HOME/.bashrc" 2>/dev/null; then
+        cat >> "$HOME/.bashrc" <<'EOF'
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+EOF
+      fi
+      if [ -s "$NVM_DIR/nvm.sh" ]; then
+        . "$NVM_DIR/nvm.sh"
+      fi
+
+      # 安装 Node (LTS)
+      echo "[3/5] 安装 Node (nvm)..."
+      if command -v nvm >/dev/null 2>&1; then
+        nvm install "$NODE_VERSION"
+        nvm alias default "$NODE_VERSION"
+      else
+        echo "警告: nvm 未就绪，跳过 Node 安装"
+      fi
+
+      # 安装 uv
+      echo "[4/5] 安装 uv..."
+      mkdir -p "$HOME/.local/bin"
+      if [ ! -x "$HOME/.local/bin/uv" ]; then
+        curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR="$HOME/.local/bin" UV_NO_MODIFY_PATH=1 sh
+      fi
+      export PATH="$HOME/.local/bin:$PATH"
+      if ! grep -q '/.local/bin' "$HOME/.bashrc" 2>/dev/null; then
+        echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+      fi
+    fi
+
+    # 初始化项目
+    echo "[5/5] 初始化项目..."
+    cd "$HOME"
+    if [ ! -d "$PROJECT_DIR" ]; then
+        case "$SOURCE" in
+            empty)
+                mkdir -p "$PROJECT_DIR"
+                ;;
+            scrapy)
+                if command -v uv >/dev/null 2>&1; then
+                  cd "$HOME"
+                  uv init "$NAME"
+                  cd "$PROJECT_DIR"
+                  uv add scrapy
+                  if [ ! -f "$PROJECT_DIR/scrapy.cfg" ]; then
+                    uv run scrapy startproject "$NAME" .
+                  fi
+                else
+                  mkdir -p "$PROJECT_DIR"
+                  cat > "$PROJECT_DIR/README.md" <<'EOF'
+本项目选择了 Scrapy 模板，但当前环境未安装 uv。
+请先安装 uv 后执行:
+  cd "$HOME"
+  uv init <项目名>
+  cd <项目名>
+  uv add scrapy
+  uv run scrapy startproject <项目名> .
+EOF
+                fi
+                ;;
+            git)
+                git clone "$REPO" "$PROJECT_DIR"
+                ;;
+            upload)
+                mkdir -p "$PROJECT_DIR"
+                ;;
+        esac
+    fi
+
+    # 设置权限
+    sudo chown -R coder:coder "$PROJECT_DIR" 2>/dev/null || true
+
+    echo ""
+    echo "========================================"
+    echo "  开发环境已就绪!"
+    echo "  项目目录: $PROJECT_DIR"
+    echo "  完成时间: $(date)"
+    echo "========================================"
+  EOT
+}
+
 # VS Code 编辑器
 module "code-server" {
-  count   = data.coder_workspace.me.start_count
+  count   = data.coder_parameter.enable_code_server.value ? data.coder_workspace.me.start_count : 0
   source  = "registry.coder.com/coder/code-server/coder"
   version = "~> 1.0"
 
@@ -195,7 +315,7 @@ module "code-server" {
 
 # JupyterLab
 module "jupyterlab" {
-  count   = data.coder_workspace.me.start_count
+  count   = data.coder_parameter.enable_jupyterlab.value ? data.coder_workspace.me.start_count : 0
   source  = "registry.coder.com/coder/jupyterlab/coder"
   version = "~> 1.0"
 
@@ -206,7 +326,7 @@ module "jupyterlab" {
 
 # 文件管理器
 module "filebrowser" {
-  count   = data.coder_workspace.me.start_count
+  count   = data.coder_parameter.enable_filebrowser.value ? data.coder_workspace.me.start_count : 0
   source  = "registry.coder.com/coder/filebrowser/coder"
   version = "~> 1.0"
 
@@ -240,7 +360,7 @@ resource "docker_volume" "home_volume" {
 
 resource "docker_container" "workspace" {
   count    = data.coder_workspace.me.start_count
-  image    = "codercom/enterprise-base:ubuntu"
+  image    = var.docker_image
   name     = "coder-${data.coder_workspace_owner.me.name}-${lower(data.coder_workspace.me.name)}"
   hostname = data.coder_workspace.me.name
   entrypoint = ["sh", "-c", replace(coder_agent.main.init_script, "/localhost|127\\.0\\.0\\.1/", "host.docker.internal")]
@@ -272,6 +392,27 @@ resource "docker_container" "workspace" {
   }
 }
 
+resource "coder_metadata" "workspace_info" {
+  count       = data.coder_workspace.me.start_count
+  resource_id = docker_container.workspace[0].id
+  item {
+    key   = "project_dir"
+    value = local.project_dir
+  }
+  item {
+    key   = "source"
+    value = local.source
+  }
+  item {
+    key   = "repo"
+    value = local.repo != "" ? local.repo : "N/A"
+  }
+  item {
+    key   = "image"
+    value = var.docker_image
+  }
+}
+
 output "project_directory" {
-  value = "/home/coder/${data.coder_parameter.name.value}"
+  value = local.project_dir
 }
