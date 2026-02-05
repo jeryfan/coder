@@ -1,3 +1,5 @@
 docker/volumes
 docker/.env
 *.zip
+packages/
+.DS_Store
