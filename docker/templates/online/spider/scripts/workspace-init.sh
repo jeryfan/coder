@@ -8,6 +8,7 @@ die()  { printf '错误: %s\n' "$*" >&2; exit 1; }
 SOURCE="${source}"
 NAME="${name}"
 REPO="${repo}"
+WORKSPACE_DIR="${workspace_dir}"
 PROJECT_DIR="${project_dir}"
 NODE_VERSION="${node_version}"
 
@@ -16,6 +17,7 @@ init_home() {
     cp -rT /etc/skel "$HOME"
     touch "$HOME/.init_done"
   fi
+  mkdir -p "$WORKSPACE_DIR"
 }
 
 append_nvm_bashrc() {
@@ -78,7 +80,7 @@ write_scrapy_readme() {
   printf '%s\n' \
     '本项目选择了 Scrapy 模板，但当前环境未安装 uv。' \
     '请先安装 uv 后执行:' \
-    '  cd "$HOME"' \
+    '  cd "$HOME/workspace"' \
     '  uv init <项目名>' \
     '  cd <项目名>' \
     '  uv add scrapy' \
@@ -88,7 +90,7 @@ write_scrapy_readme() {
 
 init_project() {
   log "[5/5] 初始化项目..."
-  cd "$HOME"
+  cd "$WORKSPACE_DIR"
   if [ -d "$PROJECT_DIR" ]; then
     return
   fi

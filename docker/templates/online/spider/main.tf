@@ -10,11 +10,12 @@ terraform {
 }
 
 locals {
-  project_name = data.coder_parameter.name.value
-  project_dir  = "/home/coder/${local.project_name}"
-  source       = data.coder_parameter.source.value
-  repo         = data.coder_parameter.repo.value
-  node_version = data.coder_parameter.node_version.value
+  project_name  = data.coder_parameter.name.value
+  workspace_dir = "/home/coder/workspace"
+  project_dir   = "${local.workspace_dir}/${local.project_name}"
+  source        = data.coder_parameter.source.value
+  repo          = data.coder_parameter.repo.value
+  node_version  = data.coder_parameter.node_version.value
 }
 
 variable "docker_socket" {
@@ -170,11 +171,12 @@ resource "coder_script" "workspace_init" {
   timeout             = 1800
 
   script = templatefile("${path.module}/scripts/workspace-init.sh", {
-    source       = local.source
-    name         = local.project_name
-    repo         = local.repo
-    project_dir  = local.project_dir
-    node_version = local.node_version
+    source        = local.source
+    name          = local.project_name
+    repo          = local.repo
+    workspace_dir = local.workspace_dir
+    project_dir   = local.project_dir
+    node_version  = local.node_version
   })
 }
 
@@ -185,7 +187,7 @@ module "code-server" {
   version = "~> 1.0"
 
   agent_id = coder_agent.main.id
-  folder   = "/home/coder"
+  folder   = local.workspace_dir
   order    = 1
 }
 
