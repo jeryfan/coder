@@ -3,4 +3,12 @@ docker/.env
 *.zip
 packages/
 .DS_Store
-docker/.env
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+
+# Logs
+*.log

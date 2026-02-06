@@ -1,21 +1,24 @@
+# Spider 工作空间模板
+#
+# 提供基于 Docker 的爬虫开发环境，内置 code-server (VS Code)、
+# JupyterLab、FileBrowser，支持新建空项目、Scrapy 项目或克隆 Git 仓库。
+
 terraform {
+  required_version = ">= 1.0"
+
   required_providers {
     coder = {
-      source = "coder/coder"
+      source  = "coder/coder"
+      version = ">= 0.17"
     }
     docker = {
-      source = "kreuzwerker/docker"
+      source  = "kreuzwerker/docker"
+      version = ">= 3.0"
     }
   }
 }
 
-locals {
-  project_name  = data.coder_parameter.name.value
-  workspace_dir = "/home/coder/workspace"
-  project_dir   = "${local.workspace_dir}/${local.project_name}"
-  source        = data.coder_parameter.source.value
-  repo          = data.coder_parameter.repo.value
-}
+# ── Variables ────────────────────────────────────────────
 
 variable "docker_socket" {
   default     = ""
@@ -47,23 +50,30 @@ variable "coder_network_name" {
   type        = string
 }
 
+# ── Providers ────────────────────────────────────────────
+
 provider "docker" {
   host = var.docker_socket != "" ? var.docker_socket : null
 }
 
 provider "coder" {}
 
+# ── Data Sources ─────────────────────────────────────────
+
 data "coder_provisioner" "me" {}
 data "coder_workspace" "me" {}
 data "coder_workspace_owner" "me" {}
 
-# 项目来源
+# ── Parameters ───────────────────────────────────────────
+
 data "coder_parameter" "source" {
   name         = "source"
   display_name = "项目来源"
+  description  = "选择项目的初始化方式：新建空项目、Scrapy 模板或从 Git 仓库克隆"
   type         = "string"
   default      = "empty"
   mutable      = false
+  order        = 1
   option {
     name  = "新建空项目"
     value = "empty"
@@ -78,31 +88,45 @@ data "coder_parameter" "source" {
   }
 }
 
-# 项目名称
 data "coder_parameter" "name" {
   name         = "name"
   display_name = "项目名称"
+  description  = "项目目录名，将创建在 ~/workspace/ 下"
   type         = "string"
   default      = "my_project"
   mutable      = false
+  order        = 2
   validation {
     regex = "^[a-zA-Z][a-zA-Z0-9_-]*$"
     error = "项目名必须以字母开头，只能包含字母、数字、下划线、连字符"
   }
 }
 
-# Git 仓库地址
 data "coder_parameter" "repo" {
   name         = "repo"
   display_name = "Git 仓库地址"
+  description  = "当项目来源选择「克隆 Git 仓库」时填写，支持 HTTPS 和 SSH 地址"
   type         = "string"
   default      = ""
   mutable      = false
+  order        = 3
   validation {
     regex = "^$|^(https?|ssh|git)://|^git@"
     error = "请输入有效的 Git 仓库地址（https://、ssh://、git:// 或 git@ 开头），或保持为空"
   }
 }
+
+# ── Locals ───────────────────────────────────────────────
+
+locals {
+  project_name  = data.coder_parameter.name.value
+  workspace_dir = "/home/coder/workspace"
+  project_dir   = "${local.workspace_dir}/${local.project_name}"
+  source        = data.coder_parameter.source.value
+  repo          = data.coder_parameter.repo.value
+}
+
+# ── Agent ────────────────────────────────────────────────
 
 resource "coder_agent" "main" {
   arch = data.coder_provisioner.me.arch
@@ -141,12 +165,12 @@ resource "coder_agent" "main" {
 }
 
 resource "coder_script" "workspace_init" {
-  agent_id            = coder_agent.main.id
-  display_name        = "Workspace Init"
-  icon                = "/icon/package.svg"
-  run_on_start        = true
-  start_blocks_login  = true
-  timeout             = 1800
+  agent_id           = coder_agent.main.id
+  display_name       = "Workspace Init"
+  icon               = "/icon/package.svg"
+  run_on_start       = true
+  start_blocks_login = true
+  timeout            = 1800
 
   script = templatefile("${path.module}/scripts/workspace-init.sh", {
     source        = local.source
@@ -157,7 +181,8 @@ resource "coder_script" "workspace_init" {
   })
 }
 
-# VS Code 编辑器
+# ── Apps ─────────────────────────────────────────────────
+
 module "code-server" {
   count   = data.coder_workspace.me.start_count
   source  = "registry.coder.com/coder/code-server/coder"
@@ -168,10 +193,9 @@ module "code-server" {
   extensions = [
     "ms-python.python",
   ]
-  order    = 1
+  order = 1
 }
 
-# JupyterLab
 module "jupyterlab" {
   count   = data.coder_workspace.me.start_count
   source  = "registry.coder.com/coder/jupyterlab/coder"
@@ -182,7 +206,6 @@ module "jupyterlab" {
   subdomain = false
 }
 
-# 文件管理器
 module "filebrowser" {
   count   = data.coder_workspace.me.start_count
   source  = "registry.coder.com/coder/filebrowser/coder"
@@ -192,6 +215,8 @@ module "filebrowser" {
   order     = 3
   subdomain = false
 }
+
+# ── Infrastructure ───────────────────────────────────────
 
 resource "docker_volume" "home_volume" {
   name = "coder-${data.coder_workspace.me.id}-home"
@@ -275,6 +300,8 @@ resource "coder_metadata" "workspace_info" {
     value = var.docker_image
   }
 }
+
+# ── Outputs ──────────────────────────────────────────────
 
 output "project_directory" {
   value = local.project_dir

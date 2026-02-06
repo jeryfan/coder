@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# ── 信号处理 ──────────────────────────────────────────────
+cleanup() {
+  local exit_code=$?
+  if [ $exit_code -ne 0 ]; then
+    printf '初始化异常退出 (exit code: %d)，请检查上方日志\n' "$exit_code" >&2
+  fi
+}
+trap cleanup EXIT
+
 # ── 模板变量 ──────────────────────────────────────────────
 readonly SOURCE="${source}"
 readonly NAME="${name}"
@@ -46,9 +55,11 @@ init_project() {
       ;;
     scrapy)
       if command -v uv >/dev/null 2>&1; then
+        log "  uv 版本: $(uv --version)"
         uv init "$NAME"
         cd "$PROJECT_DIR"
         uv add scrapy
+        log "  scrapy 版本: $(uv run scrapy version)"
         [ -f scrapy.cfg ] || uv run scrapy startproject "$NAME" .
       else
         mkdir -p "$PROJECT_DIR"
@@ -68,7 +79,9 @@ MD
       fi
       ;;
     git)
-      git clone --depth 1 "$REPO" "$PROJECT_DIR"
+      if ! git clone --depth 1 "$REPO" "$PROJECT_DIR"; then
+        die "Git 克隆失败，请检查仓库地址是否正确: $REPO。可在终端中手动重试: git clone $REPO $PROJECT_DIR"
+      fi
       ;;
   esac
 }
