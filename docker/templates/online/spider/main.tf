@@ -15,7 +15,7 @@ locals {
   project_dir   = "${local.workspace_dir}/${local.project_name}"
   source        = data.coder_parameter.source.value
   repo          = data.coder_parameter.repo.value
-  node_version  = data.coder_parameter.node_version.value
+  node_version  = "lts/*"
 }
 
 variable "docker_socket" {
@@ -91,41 +91,6 @@ data "coder_parameter" "repo" {
   }
 }
 
-# Node 版本
-data "coder_parameter" "node_version" {
-  name         = "node_version"
-  display_name = "Node 版本 (nvm)"
-  type         = "string"
-  default      = "lts/*"
-  mutable      = true
-  description  = "示例: lts/*、20、18"
-}
-
-# 启用的工具
-data "coder_parameter" "enable_code_server" {
-  name         = "enable_code_server"
-  display_name = "启用 VS Code (code-server)"
-  type         = "bool"
-  default      = true
-  mutable      = true
-}
-
-data "coder_parameter" "enable_jupyterlab" {
-  name         = "enable_jupyterlab"
-  display_name = "启用 JupyterLab"
-  type         = "bool"
-  default      = true
-  mutable      = true
-}
-
-data "coder_parameter" "enable_filebrowser" {
-  name         = "enable_filebrowser"
-  display_name = "启用文件管理器"
-  type         = "bool"
-  default      = true
-  mutable      = true
-}
-
 resource "coder_agent" "main" {
   arch = data.coder_provisioner.me.arch
   os   = "linux"
@@ -182,7 +147,7 @@ resource "coder_script" "workspace_init" {
 
 # VS Code 编辑器
 module "code-server" {
-  count   = data.coder_parameter.enable_code_server.value ? data.coder_workspace.me.start_count : 0
+  count   = data.coder_workspace.me.start_count
   source  = "registry.coder.com/coder/code-server/coder"
   version = "~> 1.0"
 
@@ -193,7 +158,7 @@ module "code-server" {
 
 # JupyterLab
 module "jupyterlab" {
-  count   = data.coder_parameter.enable_jupyterlab.value ? data.coder_workspace.me.start_count : 0
+  count   = data.coder_workspace.me.start_count
   source  = "registry.coder.com/coder/jupyterlab/coder"
   version = "~> 1.0"
 
@@ -204,7 +169,7 @@ module "jupyterlab" {
 
 # 文件管理器
 module "filebrowser" {
-  count   = data.coder_parameter.enable_filebrowser.value ? data.coder_workspace.me.start_count : 0
+  count   = data.coder_workspace.me.start_count
   source  = "registry.coder.com/coder/filebrowser/coder"
   version = "~> 1.0"
 
