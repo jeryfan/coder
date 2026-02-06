@@ -35,7 +35,11 @@ services:
     volumes:
       - ./volumes/postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-coder} -d ${POSTGRES_DB:-coder}"]
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-coder} -d ${POSTGRES_DB:-coder}",
+        ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -46,4 +50,5 @@ services:
 
 networks:
   coder-network:
+    name: coder-network
     driver: bridge

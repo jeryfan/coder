@@ -30,6 +30,12 @@ variable "docker_image" {
   type        = string
 }
 
+variable "coder_network_name" {
+  default     = "coder-network"
+  description = "Docker network name used by the Coder server container"
+  type        = string
+}
+
 provider "docker" {
   host = var.docker_socket != "" ? var.docker_socket : null
 }
@@ -206,11 +212,14 @@ resource "docker_container" "workspace" {
   image    = var.docker_image
   name     = "coder-${data.coder_workspace_owner.me.name}-${lower(data.coder_workspace.me.name)}"
   hostname = data.coder_workspace.me.name
-  entrypoint = ["sh", "-c", replace(coder_agent.main.init_script, "/localhost|127\\.0\\.0\\.1/", "host.docker.internal")]
+  entrypoint = ["sh", "-c", replace(coder_agent.main.init_script, "/localhost|127\\.0\\.0\\.1/", "coder-server")]
   env        = ["CODER_AGENT_TOKEN=${coder_agent.main.token}"]
   host {
     host = "host.docker.internal"
     ip   = "host-gateway"
+  }
+  networks_advanced {
+    name = var.coder_network_name
   }
   volumes {
     container_path = "/home/coder"
