@@ -16,6 +16,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+      attestations: write
+      id-token: write
 
     steps:
       - uses: actions/checkout@v4
@@ -32,6 +34,7 @@ jobs:
         with:
           context: images/spider
           push: true
+          provenance: false
           tags: |
             ${{ env.IMAGE_NAME }}:latest
             ${{ env.IMAGE_NAME }}:${{ github.sha }}
