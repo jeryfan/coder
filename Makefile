@@ -1,4 +1,4 @@
-.PHONY: package image-build image-push image image-offline-build image-offline-push image-offline
+.PHONY: package image-build image-push image
 
 SHELL := /bin/bash
 
@@ -6,7 +6,6 @@ ROOT := $(abspath .)
 TEMPLATES_ROOT ?= docker/templates
 PACKAGE_DIR ?= packages
 SPIDER_IMAGE ?= ghcr.io/jeryfan/coder-spider:latest
-SPIDER_OFFLINE_IMAGE ?= ghcr.io/jeryfan/coder-spider-offline:latest
 
 package:
 	@set -euo pipefail; \
@@ -32,11 +31,3 @@ image-push:
 	docker push $(SPIDER_IMAGE)
 
 image: image-build image-push
-
-image-offline-build:
-	docker build -t $(SPIDER_OFFLINE_IMAGE) docker/images/spider-offline
-
-image-offline-push:
-	docker push $(SPIDER_OFFLINE_IMAGE)
-
-image-offline: image-offline-build image-offline-push
