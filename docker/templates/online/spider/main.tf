@@ -65,10 +65,6 @@ data "coder_parameter" "source" {
     name  = "克隆 Git 仓库"
     value = "git"
   }
-  option {
-    name  = "上传文件"
-    value = "upload"
-  }
 }
 
 # 项目名称
@@ -159,6 +155,10 @@ module "code-server" {
 
   agent_id = coder_agent.main.id
   folder   = local.workspace_dir
+  extensions = [
+    "ms-ceintl.vscode-language-pack-zh-hans",
+    "ms-python.python",
+  ]
   order    = 1
 }
 
