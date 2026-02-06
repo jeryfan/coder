@@ -14,7 +14,6 @@ locals {
   workspace_dir = "/home/coder/workspace"
   project_dir   = "${local.workspace_dir}/${local.project_name}"
   source        = data.coder_parameter.source.value
-  repo          = data.coder_parameter.repo.value
 }
 
 variable "docker_socket" {
@@ -24,8 +23,8 @@ variable "docker_socket" {
 }
 
 variable "docker_image" {
-  default     = "ghcr.io/jeryfan/coder-spider:latest"
-  description = "Base image for the workspace container"
+  default     = "ghcr.io/jeryfan/coder-spider-offline:latest"
+  description = "Base image for the workspace container (offline)"
   type        = string
 }
 
@@ -57,7 +56,7 @@ data "coder_provisioner" "me" {}
 data "coder_workspace" "me" {}
 data "coder_workspace_owner" "me" {}
 
-# 项目来源
+# 项目来源（离线模式：不支持 Git 克隆）
 data "coder_parameter" "source" {
   name         = "source"
   display_name = "项目来源"
@@ -72,10 +71,6 @@ data "coder_parameter" "source" {
     name  = "新建 Scrapy 项目"
     value = "scrapy"
   }
-  option {
-    name  = "克隆 Git 仓库"
-    value = "git"
-  }
 }
 
 # 项目名称
@@ -88,19 +83,6 @@ data "coder_parameter" "name" {
   validation {
     regex = "^[a-zA-Z][a-zA-Z0-9_-]*$"
     error = "项目名必须以字母开头，只能包含字母、数字、下划线、连字符"
-  }
-}
-
-# Git 仓库地址
-data "coder_parameter" "repo" {
-  name         = "repo"
-  display_name = "Git 仓库地址"
-  type         = "string"
-  default      = ""
-  mutable      = false
-  validation {
-    regex = "^$|^(https?|ssh|git)://|^git@"
-    error = "请输入有效的 Git 仓库地址（https://、ssh://、git:// 或 git@ 开头），或保持为空"
   }
 }
 
@@ -151,13 +133,12 @@ resource "coder_script" "workspace_init" {
   script = templatefile("${path.module}/scripts/workspace-init.sh", {
     source        = local.source
     name          = local.project_name
-    repo          = local.repo
     workspace_dir = local.workspace_dir
     project_dir   = local.project_dir
   })
 }
 
-# VS Code 编辑器
+# VS Code 编辑器（code-server 已预装在镜像中）
 module "code-server" {
   count   = data.coder_workspace.me.start_count
   source  = "registry.coder.com/coder/code-server/coder"
@@ -171,7 +152,7 @@ module "code-server" {
   order    = 1
 }
 
-# JupyterLab
+# JupyterLab（已预装在镜像中）
 module "jupyterlab" {
   count   = data.coder_workspace.me.start_count
   source  = "registry.coder.com/coder/jupyterlab/coder"
@@ -182,7 +163,7 @@ module "jupyterlab" {
   subdomain = false
 }
 
-# 文件管理器
+# 文件管理器（filebrowser 已预装在镜像中）
 module "filebrowser" {
   count   = data.coder_workspace.me.start_count
   source  = "registry.coder.com/coder/filebrowser/coder"
@@ -265,10 +246,6 @@ resource "coder_metadata" "workspace_info" {
   item {
     key   = "source"
     value = local.source
-  }
-  item {
-    key   = "repo"
-    value = local.repo != "" ? local.repo : "N/A"
   }
   item {
     key   = "image"

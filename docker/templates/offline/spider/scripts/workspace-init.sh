@@ -4,7 +4,6 @@ set -euo pipefail
 # ── 模板变量 ──────────────────────────────────────────────
 readonly SOURCE="${source}"
 readonly NAME="${name}"
-readonly REPO="${repo}"
 readonly WORKSPACE_DIR="${workspace_dir}"
 readonly PROJECT_DIR="${project_dir}"
 
@@ -27,7 +26,7 @@ init_home() {
   mkdir -p "$WORKSPACE_DIR"
 }
 
-# ── 初始化项目 ───────────────────────────────────────────
+# ── 初始化项目（离线模式）────────────────────────────────
 init_project() {
   step "初始化项目..."
   cd "$WORKSPACE_DIR"
@@ -37,7 +36,6 @@ init_project() {
     return
   fi
 
-  # 确保 uv 在 PATH 中
   export PATH="$HOME/.local/bin:$PATH"
 
   case "$SOURCE" in
@@ -48,27 +46,12 @@ init_project() {
       if command -v uv >/dev/null 2>&1; then
         uv init "$NAME"
         cd "$PROJECT_DIR"
-        uv add scrapy
-        [ -f scrapy.cfg ] || uv run scrapy startproject "$NAME" .
+        uv add scrapy --offline
+        [ -f scrapy.cfg ] || uv run --offline scrapy startproject "$NAME" .
       else
         mkdir -p "$PROJECT_DIR"
-        cat > "$PROJECT_DIR/README.md" <<'MD'
-# Scrapy 项目初始化失败
-
-环境中未安装 uv，请手动执行以下命令：
-
-```bash
-cd ~/workspace
-uv init <项目名>
-cd <项目名>
-uv add scrapy
-uv run scrapy startproject <项目名> .
-```
-MD
+        warn "uv 未安装，无法初始化 Scrapy 项目"
       fi
-      ;;
-    git)
-      git clone --depth 1 "$REPO" "$PROJECT_DIR"
       ;;
   esac
 }
@@ -76,15 +59,11 @@ MD
 # ── 主流程 ───────────────────────────────────────────────
 main() {
   log "========================================"
-  log "  爬虫开发环境初始化"
+  log "  爬虫开发环境初始化（离线模式）"
   log "  项目来源: $SOURCE"
   log "  项目名称: $NAME"
   log "  开始时间: $(date)"
   log "========================================"
-
-  if [ "$SOURCE" = "git" ] && [ -z "$REPO" ]; then
-    die "选择了 Git 仓库来源但未提供仓库地址"
-  fi
 
   init_home
   init_project
