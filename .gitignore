@@ -3,3 +3,4 @@ docker/.env
 *.zip
 packages/
 .DS_Store
+docker/.env
