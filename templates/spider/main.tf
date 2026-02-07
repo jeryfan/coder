@@ -188,12 +188,13 @@ module "code-server" {
   source  = "registry.coder.com/coder/code-server/coder"
   version = "~> 1.0"
 
-  agent_id = coder_agent.main.id
-  folder   = local.workspace_dir
+  agent_id  = coder_agent.main.id
+  folder    = local.workspace_dir
   extensions = [
     "ms-python.python",
   ]
-  order = 1
+  order     = 1
+  subdomain = false
 }
 
 module "jupyterlab" {
