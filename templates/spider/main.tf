@@ -195,6 +195,7 @@ module "code-server" {
   ]
   order     = 1
   subdomain = false
+  share     = "public"
 }
 
 module "jupyterlab" {
@@ -205,6 +206,7 @@ module "jupyterlab" {
   agent_id  = coder_agent.main.id
   order     = 2
   subdomain = false
+  share     = "public"
 }
 
 module "filebrowser" {
@@ -215,6 +217,7 @@ module "filebrowser" {
   agent_id  = coder_agent.main.id
   order     = 3
   subdomain = false
+  share     = "public"
 }
 
 # ── Infrastructure ───────────────────────────────────────

@@ -19,7 +19,7 @@ readonly PROJECT_DIR="${project_dir}"
 
 # ── 日志 ──────────────────────────────────────────────────
 STEP=0
-TOTAL=2
+TOTAL=3
 
 log()  { printf '%s\n' "$*"; }
 step() { STEP=$((STEP + 1)); log "[$STEP/$TOTAL] $*"; }
@@ -34,6 +34,21 @@ init_home() {
     touch "$HOME/.init_done"
   fi
   mkdir -p "$WORKSPACE_DIR"
+}
+
+# ── 配置 code-server ─────────────────────────────────────
+init_code_server() {
+  step "配置 code-server..."
+  local settings_dir="$HOME/.local/share/code-server/User"
+  local settings_file="$settings_dir/settings.json"
+  if [ ! -f "$settings_file" ]; then
+    mkdir -p "$settings_dir"
+    cat > "$settings_file" <<'JSON'
+{
+  "security.workspace.trust.enabled": false
+}
+JSON
+  fi
 }
 
 # ── 初始化项目 ───────────────────────────────────────────
@@ -100,6 +115,7 @@ main() {
   fi
 
   init_home
+  init_code_server
   init_project
 
   sudo chown -R coder:coder "$PROJECT_DIR" 2>/dev/null || true
